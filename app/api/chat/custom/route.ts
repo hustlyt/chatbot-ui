@@ -1,6 +1,7 @@
 import { CHAT_SETTING_LIMITS } from "@/lib/chat-setting-limits"
-import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { Database } from "@/supabase/types"
 import { ChatSettings } from "@/types"
+import { createClient } from "@supabase/supabase-js"
 import { OpenAIStream, StreamingTextResponse } from "ai"
 import { ServerRuntime } from "next"
 import OpenAI from "openai"
@@ -10,22 +11,34 @@ export const runtime: ServerRuntime = "edge"
 
 export async function POST(request: Request) {
   const json = await request.json()
-  const { chatSettings, messages } = json as {
+  const { chatSettings, messages, customModelId } = json as {
     chatSettings: ChatSettings
     messages: any[]
+    customModelId: string
   }
 
   try {
-    const profile = await getServerProfile()
+    const supabaseAdmin = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
 
-    checkApiKey(profile.openai_api_key, "OpenAI")
+    const { data: customModel, error } = await supabaseAdmin
+      .from("models")
+      .select("*")
+      .eq("id", customModelId)
+      .single()
 
-    const openai = new OpenAI({
-      apiKey: profile.openai_api_key || "",
-      organization: profile.openai_organization_id
+    if (!customModel) {
+      throw new Error(error.message)
+    }
+
+    const custom = new OpenAI({
+      apiKey: customModel.api_key || "",
+      baseURL: customModel.base_url
     })
 
-    const response = await openai.chat.completions.create({
+    const response = await custom.chat.completions.create({
       model: chatSettings.model as ChatCompletionCreateParamsBase["model"],
       messages: messages as ChatCompletionCreateParamsBase["messages"],
       temperature: chatSettings.temperature,
@@ -43,10 +56,10 @@ export async function POST(request: Request) {
 
     if (errorMessage.toLowerCase().includes("api key not found")) {
       errorMessage =
-        "OpenAI API Key not found. Please set it in your profile settings."
+        "Custom API Key not found. Please set it in your profile settings."
     } else if (errorMessage.toLowerCase().includes("incorrect api key")) {
       errorMessage =
-        "OpenAI API Key is incorrect. Please fix it in your profile settings."
+        "Custom API Key is incorrect. Please fix it in your profile settings."
     }
 
     return new Response(JSON.stringify({ message: errorMessage }), {

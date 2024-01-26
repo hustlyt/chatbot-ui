@@ -3,7 +3,7 @@ import { ChatbotUIContext } from "@/context/context"
 import { LLM_LIST } from "@/lib/models/llm/llm-list"
 import { cn } from "@/lib/utils"
 import { Tables } from "@/supabase/types"
-import { LLM, LLMID, MessageImage } from "@/types"
+import { LLM, LLMID, MessageImage, ModelProvider } from "@/types"
 import {
   IconBolt,
   IconCaretDownFilled,
@@ -60,7 +60,8 @@ export const Message: FC<MessageProps> = ({
     chatImages,
     assistantImages,
     toolInUse,
-    files
+    files,
+    models
   } = useContext(ChatbotUIContext)
 
   const { handleSendMessage } = useChatHandler()
@@ -80,7 +81,17 @@ export const Message: FC<MessageProps> = ({
   const [viewSources, setViewSources] = useState(false)
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(message.content)
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(message.content)
+    } else {
+      const textArea = document.createElement("textarea")
+      textArea.value = message.content
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      document.execCommand("copy")
+      document.body.removeChild(textArea)
+    }
   }
 
   const handleSendEdit = () => {
@@ -118,6 +129,14 @@ export const Message: FC<MessageProps> = ({
   }, [isEditing])
 
   const MODEL_DATA = [
+    ...models.map(model => ({
+      modelId: model.model_id as LLMID,
+      modelName: model.name,
+      provider: "custom" as ModelProvider,
+      hostedId: model.id,
+      platformLink: "",
+      imageInput: false
+    })),
     ...LLM_LIST,
     ...availableLocalModels,
     ...availableOpenRouterModels
